@@ -1,16 +1,15 @@
 
-
 use config::Config;
-use hyper::Client;
 use rustc_serialize::{Encodable, Encoder};
 use rustc_serialize::json::{self};
 use std::sync::Arc;
 use std::io::Read;
-use chrono::{Duration, UTC};
-use chrono::offset::TimeZone;
+use chrono::{Duration};
+use chrono::offset::{TimeZone, Utc};
 use std::sync::atomic::Ordering;
 use std::thread;
-use hyper::status::StatusCode;
+use reqwest::{Client, StatusCode};
+use reqwest::header::ContentType;
 
 #[derive(RustcDecodable, Debug)]
 pub struct Response {
@@ -114,28 +113,15 @@ pub struct StdDeviationBounds {
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct HotCloudQuery {
-    pub template: SearchTemplate,
+    pub id: String,
     pub params: SearchParams
 }
 
 impl HotCloudQuery {
     pub fn new(hour: usize) -> HotCloudQuery {
         HotCloudQuery {
-            template: SearchTemplate::new(),
+            id: "hotcloud".to_owned(),
             params: SearchParams::new(hour)
-        }
-    }
-}
-
-#[derive(RustcEncodable, RustcDecodable, Debug)]
-pub struct SearchTemplate {
-    pub id: String
-}
-
-impl SearchTemplate {
-    pub fn new() -> SearchTemplate {
-        SearchTemplate {
-            id: "hotcloud".to_owned()
         }
     }
 }
@@ -148,8 +134,8 @@ pub struct SearchParams {
 
 impl SearchParams {
     pub fn new(hour: usize) -> SearchParams {
-        let start = UTC.ymd(2015, 1, 1).and_hms(0, 0, 0) + Duration::hours(hour as i64) - Duration::days(1);
-        let end = UTC.ymd(2015, 1, 1).and_hms(0, 0, 0) + Duration::hours(hour as i64);
+        let start = Utc.ymd(2015, 1, 1).and_hms(0, 0, 0) + Duration::hours(hour as i64) - Duration::days(1);
+        let end = Utc.ymd(2015, 1, 1).and_hms(0, 0, 0) + Duration::hours(hour as i64);
 
         SearchParams {
             start: start.format("%Y-%m-%dT%H:%M:%S").to_string(),
@@ -205,13 +191,14 @@ fn query_thread(start: usize, end: usize, client: Arc<Client>, config: Arc<Confi
 
         // Execute a query using the pre-saved search template and extensive
         // filter_path filtering
-        let mut hyper_response = client.post("http://localhost:9200/data/data/_search/template?filter_path=aggregations.**.ninetieth_surprise,aggregations.metrics.buckets.key")
-              .body(&body)
-              .send().unwrap();
-
+        let mut response = client.post("http://localhost:9200/_search/template?filter_path=aggregations.**.ninetieth_surprise,aggregations.metrics.buckets.key")
+            .header(ContentType::json())
+            .body(body)
+            .send().unwrap();
+        
         let mut body = String::new();
-        let _ = match hyper_response.status {
-            StatusCode::Ok => {hyper_response.read_to_string(&mut body)},
+        let _ = match response.status() {
+            StatusCode::Ok => {response.read_to_string(&mut body)},
             _ => continue
         };
 
@@ -225,7 +212,7 @@ fn query_thread(start: usize, end: usize, client: Arc<Client>, config: Arc<Confi
         for metric in decoded.aggregations.metrics.buckets {
             bulk.push(HotcloudResult {
                 metric: metric.key,
-                hour: (UTC.ymd(2015, 1, 1).and_hms(0, 0, 0) + Duration::hours(hour as i64)).format("%Y-%m-%dT%H:%M:%S").to_string(),
+                hour: (Utc.ymd(2015, 1, 1).and_hms(0, 0, 0) + Duration::hours(hour as i64)).format("%Y-%m-%dT%H:%M:%S").to_string(),
                 value: metric.ninetieth_surprise.values.value
             });
         }

@@ -1,11 +1,12 @@
 #![feature(custom_derive, plugin)]
 
 #[macro_use] extern crate log;
+#[macro_use] extern crate hyper;
 extern crate env_logger;
 extern crate toml;
 extern crate rustc_serialize;
 extern crate rand;
-extern crate hyper;
+extern crate reqwest;
 extern crate threadpool;
 extern crate time;
 extern crate chrono;
@@ -16,10 +17,12 @@ mod util;
 mod generator;
 
 use config::Config;
-use hyper::Client;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering, ATOMIC_USIZE_INIT, ATOMIC_BOOL_INIT};
 use std::thread;
+use std::time::Duration;
+use reqwest::{Client, Body};
+use reqwest::header::ContentType;
 
 pub static ACTIVE_THREADS: AtomicUsize = ATOMIC_USIZE_INIT;
 pub static GENERATOR_RUNNING: AtomicBool = ATOMIC_BOOL_INIT;
@@ -31,21 +34,21 @@ pub enum Disruption {
 }
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     let config = Config::parse("config.toml".to_owned());
-    let client = Arc::new(Client::new());
+    let client = Arc::new(Client::builder().timeout(Duration::from_secs(180)).build().unwrap());
 
     debug!("Resetting index...");
     client.delete("http://localhost:9200/data/").send();
-    client.put("http://localhost:9200/data/").body(&config.es.mapping).send();
+    client.put("http://localhost:9200/data/").header(ContentType::json()).body(config.es.mapping.clone()).send();
 
     client.delete("http://localhost:9200/hotcloud/").send();
-    client.put("http://localhost:9200/hotcloud/").body(&config.es.hotcloudmapping).send();
+    client.put("http://localhost:9200/hotcloud/").header(ContentType::json()).body(config.es.hotcloudmapping.clone()).send();
 
     client.get("http://localhost:9200/_cluster/health?wait_for_status=yellow").send();
-    client.delete("http://localhost:9200/_search/template/hotcloud").send();
-    client.post("http://localhost:9200/_search/template/hotcloud").body(&config.es.query).send();
+    client.delete("http://localhost:9200/_scripts/hotcloud").send();
+    client.post("http://localhost:9200/_scripts/hotcloud").header(ContentType::json()).body(config.es.query.clone()).send();
 
     generator::generate_timeline(&client, &config, false);
 
@@ -53,6 +56,6 @@ fn main() {
         thread::sleep_ms(500);
     }
 
-    let _ = client.put("http://localhost:9200/data/_refresh").send();
+    let _ = client.post("http://localhost:9200/data/_refresh").send();
     query::run_hotcloud(&client, config);
 }

@@ -1,8 +1,11 @@
 nodes = 30
-queries = 500
+# queries = 500
+queries = 20
 metrics = 5
-hours = 600
-disruptions = 10
+# hours = 600
+hours = 60
+# disruptions = 10
+disruptions = 2
 threads = 8
 
 [regular_distribution]
@@ -21,65 +24,39 @@ max_std = 5
 bulk_size = 100000
 mapping = """
 {
-    \"settings\": {
-        \"refresh_interval\": \"30s\",
-        \"number_of_shards\": 1,
-        \"number_of_replicas\": 0,
-        \"index.translog.flush_threshold_size\": \"1gb\",
-        \"translog.flush_threshold_size\": \"1gb\",
-        \"index.store.throttle.type\": \"none\",
-        \"index.merge.scheduler.max_thread_count\": 1
+    "settings": {
+        "refresh_interval": "30s",
+        "number_of_shards": 1,
+        "number_of_replicas": 0,
+        "index.translog.flush_threshold_size": "1gb",
+        "translog.flush_threshold_size": "1gb",
+        "index.merge.scheduler.max_thread_count": 1
     },
-    \"mappings\": {
-        \"data\": {
-            \"_all\": {
-                \"enabled\": false
+    "mappings": {
+        "data": {
+            "_all": {
+                "enabled": false
             },
-            \"_source\": {
-                \"enabled\": false
+            "_source": {
+                "enabled": false
             },
-            \"properties\": {
-                \"node\": {
-                    \"type\": \"short\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
+            "properties": {
+                "node": {
+                    "type": "short"                },
+                "query": {
+                    "type": "short"
                 },
-                \"query\": {
-                    \"type\": \"short\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
+                "metric": {
+                    "type": "short"
                 },
-                \"metric\": {
-                    \"type\": \"short\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
+                "hour": {
+                    "type": "date",
                 },
-                \"hour\": {
-                    \"type\": \"date\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
+                "value": {
+                    "type": "float"
                 },
-                \"value\": {
-                    \"type\": \"float\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
-                },
-                \"disruption\": {
-                    \"type\": \"short\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
+                "disruption": {
+                    "type": "short"
                 }
             }
         }
@@ -89,39 +66,27 @@ mapping = """
 
 hotcloudmapping = """
 {
-    \"settings\": {
-        \"refresh_interval\": \"30s\",
-        \"number_of_shards\": 1,
-        \"number_of_replicas\": 0,
-        \"index.translog.flush_threshold_size\": \"1gb\",
-        \"translog.flush_threshold_size\": \"1gb\"
+    "settings": {
+        "refresh_interval": "30s",
+        "number_of_shards": 1,
+        "number_of_replicas": 0,
+        "index.translog.flush_threshold_size": "1gb",
+        "translog.flush_threshold_size": "1gb"
     },
-    \"mappings\": {
-        \"data\": {
-            \"_all\": {
-                \"enabled\": false
+    "mappings": {
+        "data": {
+            "_all": {
+                "enabled": false
             },
-            \"properties\": {
-                \"metric\": {
-                    \"type\": \"long\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
+            "properties": {
+                "metric": {
+                    "type": "long"
                 },
-                \"hour\": {
-                    \"type\": \"date\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
+                "hour": {
+                    "type": "date"
                 },
-                \"value\": {
-                    \"type\": \"float\",
-                    \"doc_values\": true,
-                    \"fielddata\": {
-                        \"format\": \"doc_values\"
-                    }
+                "value": {
+                    "type": "float"
                 }
             }
         }
@@ -131,78 +96,83 @@ hotcloudmapping = """
 
 query = """
 {
-  \"template\": {
-     \"query\": {
-        \"filtered\": {
-           \"filter\": {
-              \"range\": {
-                 \"hour\": {
-                    \"gte\": \"{{start}}\",
-                    \"lte\": \"{{end}}\"
-                 }
-              }
-           }
-        }
-     },
-     \"size\": 0,
-     \"aggs\": {
-        \"metrics\": {
-           \"terms\": {
-              \"field\": \"metric\"
-           },
-           \"aggs\": {
-              \"queries\": {
-                 \"terms\": {
-                    \"field\": \"query\"
-                 },
-                 \"aggs\": {
-                    \"series\": {
-                       \"date_histogram\": {
-                          \"field\": \"hour\",
-                          \"interval\": \"hour\"
-                       },
-                       \"aggs\": {
-                          \"avg\": {
-                             \"avg\": {
-                                \"field\": \"value\"
-                             }
-                          },
-                          \"movavg\": {
-                             \"moving_avg\": {
-                                \"buckets_path\": \"avg\",
-                                \"window\": 24,
-                                \"model\": \"simple\"
-                             }
-                          },
-                          \"surprise\": {
-                             \"bucket_script\": {
-                                \"buckets_path\": {
-                                   \"avg\": \"avg\",
-                                   \"movavg\": \"movavg\"
-                                },
-                                \"script\": \"(avg - movavg).abs()\"
-                             }
-                          }
-                       }
-                    },
-                    \"largest_surprise\": {
-                       \"max_bucket\": {
-                          \"buckets_path\": \"series.surprise\"
-                       }
-                    }
-                 }
-              },
-              \"ninetieth_surprise\": {
-                 \"percentiles_bucket\": {
-                    \"buckets_path\": \"queries>largest_surprise\",
-                    \"percents\": [
-                       90.0
-                    ]
-                 }
-              }
-           }
-        }
-     }
-  }
+   "script": {
+      "lang": "mustache",
+      "source": {
+         "query": {
+            "bool": {
+               "filter": {
+                  "range": {
+                     "hour": {
+                        "gte": "{{start}}",
+                        "lte": "{{end}}"
+                     }
+                  }
+               }
+            }
+         },
+         "size": 0,
+         "aggs": {
+            "metrics": {
+               "terms": {
+                  "field": "metric",
+                  "size": 5
+               },
+               "aggs": {
+                  "queries": {
+                     "terms": {
+                        "field": "query",
+                        "size": 500
+                     },
+                     "aggs": {
+                        "series": {
+                           "date_histogram": {
+                              "field": "hour",
+                              "interval": "hour"
+                           },
+                           "aggs": {
+                              "avg": {
+                                 "avg": {
+                                    "field": "value"
+                                 }
+                              },
+                              "movavg": {
+                                 "moving_avg": {
+                                    "buckets_path": "avg",
+                                    "window": 24,
+                                    "model": "simple"
+                                 }
+                              },
+                              "surprise": {
+                                 "bucket_script": {
+                                    "buckets_path": {
+                                       "avg": "avg",
+                                       "movavg": "movavg"
+                                    },
+                                    "script": "Math.abs(params.avg - params.movavg)"
+                                 }
+                              }
+                           }
+                        },
+                        "largest_surprise": {
+                           "max_bucket": {
+                              "buckets_path": "series.surprise"
+                           }
+                        }
+                     }
+                  },
+                  "ninetieth_surprise": {
+                     "percentiles_bucket": {
+                        "buckets_path": "queries>largest_surprise",
+                        "percents": [
+                           90.0
+                        ]
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
 }
 """

@@ -1,18 +1,19 @@
 
+extern crate reqwest;
+
 use config::Config;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::thread;
 use rand::distributions::{LogNormal, Normal, IndependentSample};
 use rand::{thread_rng, ThreadRng, Rng};
 use std::collections::HashMap;
-use hyper::Client;
 use rustc_serialize::{Encodable, Encoder};
 use rustc_serialize::json::{self};
 use threadpool::ThreadPool;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use chrono::{Duration, UTC};
-use chrono::offset::TimeZone;
+use chrono::{Duration};
+use chrono::offset::{TimeZone, Utc};
 use std::fs::OpenOptions;
 use std::io::Write;
 use ::Disruption;
@@ -37,7 +38,7 @@ struct NormalParams {
 }
 
 // Run the simulation, generating a "cluster history" and simulated disruptions
-pub fn generate_timeline(client: &Arc<Client>, config: &Config, json: bool) {
+pub fn generate_timeline(client: &Arc<reqwest::Client>, config: &Config, json: bool) {
 
     // We generate gaussians on another thread and cache them in a channel
     // to be grabbed when necessary, since gaussian generation is a bit slow
@@ -96,7 +97,7 @@ pub fn generate_timeline(client: &Arc<Client>, config: &Config, json: bool) {
                         false => (rx.recv().unwrap() * d.0.std as f64) + d.0.mean as f64
                     };
 
-                    let timestamp = UTC.ymd(2015, 1, 1).and_hms(0, 0, 0) + Duration::hours(hour as i64);
+                    let timestamp = Utc.ymd(2015, 1, 1).and_hms(0, 0, 0) + Duration::hours(hour as i64);
 
                     bulk.push(TupleResult {
                         node: node,
@@ -191,8 +192,8 @@ fn generate_disruptions(config: &Config, rng: &mut ThreadRng) -> HashMap<usize, 
     debug!("Generating disruptions...");
     let mut disruptions = HashMap::with_capacity(config.disruptions);
     for _ in 0..config.disruptions {
-        // Disruptions start after the 48th hour, and can last 2-24 hours long
-        let (start, length) = (rng.gen_range(48, config.hours - 24), rng.gen_range(2, 24));
+        // Disruptions start after the 24th hour, and can last 2-24 hours long
+        let (start, length) = (rng.gen_range(24, config.hours - 24), rng.gen_range(2, 24));
         let disruption = match rng.gen_range(1,4) {
             // Node disruption: all (metric,queries) on the node are disrupted
             1 => {
